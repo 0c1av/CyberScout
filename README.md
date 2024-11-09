@@ -7,6 +7,7 @@ The CyberScout is a Python tool for directory and URL enumeration. It uses a wor
 - Basic Authentication: Supports basic authentication for protected directories.
 - Timeout Handling: Configurable timeout settings to handle slow connections.
 - Custom Output: Results can be saved to a file for later review.
+- Advice: The tool provides recommendations based on results (e.g., using a proxy, increasing timeout, or using authentication).
 
 ## Getting Started
 ## Prerequisites
@@ -30,8 +31,11 @@ Optional flags:
 
 ## Example Output
 [FOUND] https://example.com/admin
+
 [NOT FOUND] https://example.com/notfound
+
 [FORBIDDEN] https://example.com/private
+
 [TIMEOUT] https://example.com/slowpath
 
 ## Notes
