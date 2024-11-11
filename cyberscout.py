@@ -122,7 +122,7 @@ parser.add_argument("-t", "--timeout", type=int, default=5, help="Timeout for re
 parser.add_argument("-o", "--output", type=str, help="File to save the output (e.g. results.txt)")
 parser.add_argument("-a", "--auth", type=str, help="Basic authentication in the format 'username:password'")
 parser.add_argument("-x", "--proxy", nargs='?', const="built_in", help="Proxy to use in the format 'ip:port'. If omitted, a built-in proxy will be used.")
-parser.add_argument("-m", "--method", type=str, default="GET", help="HTTP method to use (GET, POST, PUT, DELETE, HEAD, OPTIONS, PATCH)")
+parser.add_argument("-m", "--method", type=str, default="GET", help="Method to use (GET, POST, PUT, DELETE, HEAD, OPTIONS, PATCH)")
 args = parser.parse_args()
 
 #colors
@@ -284,16 +284,18 @@ try:
 			with open(output_file, 'a') as file:
 				file.write(f"{result}\n")
 
-	timeout_freq = timeout_calc(timeout_status, timeout_freq)
-	forbidden_freq = forbidden_calc(forbidden_status, forbidden_freq)
-	found_freq = found_calc(found_status, found_freq)
-	error_freq = error_calc(error_status, error_freq)
-	advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_option)
+		timeout_freq = timeout_calc(timeout_status, timeout_freq)
+		forbidden_freq = forbidden_calc(forbidden_status, forbidden_freq)
+		found_freq = found_calc(found_status, found_freq)
+		error_freq = error_calc(error_status, error_freq)
+		#print(f"timeout= {timeout_freq}, forbidden: {forbidden_freq}, found_freq: {found_freq}, error_freq: {error_freq}")
+		advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_option)
 
 	print("========================================================")
 	print("Found URLs:\n")
 	for found in found_list:
 		print(found)
+
 except KeyboardInterrupt:
 	print("Keyborad interrumpt\n")
 	print("========================================================\n")
