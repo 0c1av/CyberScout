@@ -138,6 +138,11 @@ RESET = "\033[0m"
 #basic variables
 url = args.url
 path_file = args.wordlist
+if os.path.exists(path_file):
+	pass
+else:
+	print(f"{RED}[ERROR]{RESET}Wordlist not found")
+	sys.exit()
 timeout = args.timeout
 output_file = args.output
 if output_file == None:
