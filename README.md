@@ -8,6 +8,7 @@ The CyberScout is a Python tool for directory and URL enumeration. It uses a wor
 - Timeout Handling: Configurable timeout settings to handle slow connections.
 - Custom Output: Results can be saved to a file for later review.
 - Advice: The tool provides recommendations based on results (e.g., using a proxy, increasing timeout, or using authentication).
+- Method: Choose the method you want to use for the requests(GET, POST, PUT, DELETE, HEAD, OPTIONS, PATCH)
 
 ## Getting Started
 ## Prerequisites
@@ -23,9 +24,10 @@ pip install -r requirements.txt
 1. Run CyberScout: You can use CyberScout by specifying the target URL and a wordlist: python dirhunter.py -u https://example.com -w /path/to/wordlist.txt
 Optional flags:
 - -t: Set a custom timeout for HTTP requests (default: 5 seconds).
-- -x: Use a proxy in the format ip:port.
+- -x: Use a built-in proxy, or import proxy in format ip:port.
 - -a: Provide basic authentication credentials in the format username:password.
 - -o: Save the results to a file.
+- -m: Method to use (GET, POST, PUT, DELETE, HEAD, OPTIONS, PATCH)
 2. Example: To run CyberScout with a proxy and save the results to a file:
   python dirhunter.py -u https://example.com -p /path/to/wordlist.txt -x 127.0.0.1:8080 -o results.txt
 

@@ -117,9 +117,14 @@ def advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_opti
 			print(f"{YELLOW}---{advice}---{RESET}")
 
 def check_path(url, path, method, timeout, auth, proxies, output_file, found_list):
+	global should_stop
+
 	path = path.strip()
 	full_url = f"{url}/{path}"
 	result = ""
+
+	if should_stop:
+		return
 
 	try:
 		if method.lower() in valid_methods:
@@ -201,7 +206,6 @@ parser.add_argument("-o", "--output", type=str, help="File to save the output (e
 parser.add_argument("-a", "--auth", type=str, help="Basic authentication in the format 'username:password'")
 parser.add_argument("-x", "--proxy", nargs='?', const="built_in", help="Proxy to use in the format 'ip:port'. If omitted, a built-in proxy will be used.")
 parser.add_argument("-m", "--method", type=str, default="GET", help="Method to use (GET, POST, PUT, DELETE, HEAD, OPTIONS, PATCH)")
-parser.add_argument("-n", "--num-workers", type=int, default=10, help="Number of worker threads (default: 10)")
 args = parser.parse_args()
 
 #colors
@@ -215,6 +219,7 @@ ORANGE = "\033[33m"
 RESET = "\033[0m"
 
 #basic variables
+should_stop = False
 url = args.url
 path_file = args.wordlist
 if os.path.exists(path_file):
@@ -282,9 +287,8 @@ print(f"Wordlist:   {path_file}")
 print(f"Timeout:    {timeout}")
 print(f"Proxy:      {proxies}")
 print(f"Method:     {method.upper()}")
-print(f"Workers:    {args.num_workers}")
 print("========================================================")
-print(f"{current_time}: CyberScout launched by {user}")
+print(f"{current_time}: DirHunter launched by {user}")
 print("========================================================")
 print("")
 
@@ -301,7 +305,7 @@ with open(path_file, 'r') as file:
 found_list = []
 
 try:
-	with ThreadPoolExecutor(max_workers=args.num_workers) as executor:
+	with ThreadPoolExecutor(max_workers=10) as executor:
 		futures = []
 		for path in paths_list:
 			futures.append(executor.submit(check_path, url, path, method, timeout, auth, proxies, output_file, found_list))
@@ -314,10 +318,12 @@ try:
 
 except KeyboardInterrupt:
 	print("Keyborad interrumpt\n")
+
 	executor.shutdown(wait=False, cancel_futures=True)
+	should_stop = True
+	
 	print("========================================================\n")
 	print("Found URLs:")
 	for found in found_list:
 		print(found)
 	sys.exit(0)
-	
