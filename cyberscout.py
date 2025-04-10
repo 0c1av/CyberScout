@@ -1,7 +1,7 @@
-kip@raspberrypi:~/Desktop/lotsoftools/CyberScout $ cat cyberscout.py 
 import os
 import requests
 import threading
+from threading import Lock
 import argparse
 from requests.auth import HTTPBasicAuth
 from datetime import datetime
@@ -126,7 +126,7 @@ def advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_opti
 	#	print("No value for frequenties")
 
 
-def check_path(url, path, method, timeout, auth, proxies, output_file, found_list, timeout_freq, forbidden_freq, found_freq, error_freq, proxy_option, start_time):
+def check_path(url, path, method, timeout, auth, proxies, output_file, found_list, proxy_option, start_time):
 	global should_stop
 
 	path = path.strip()
@@ -148,7 +148,7 @@ def check_path(url, path, method, timeout, auth, proxies, output_file, found_lis
 			forbidden_status = False
 			found_status = True
 			error_status = False
-			found_list.append(full_url)
+			shared_data["found_list"].append(full_url)
 			if output_file:
 				with open(output_file, 'r+') as file:
 					content = file.readlines()
@@ -203,13 +203,21 @@ def check_path(url, path, method, timeout, auth, proxies, output_file, found_lis
 		with open(output_file, 'a') as file:
 			file.write(f"{result}\n")
 
+	'''
 	timeout_freq = timeout_calc(timeout_status, timeout_freq)
 	forbidden_freq = forbidden_calc(forbidden_status, forbidden_freq)
 	found_freq = found_calc(found_status, found_freq)
 	error_freq = error_calc(error_status, error_freq)
+	'''
 
-	print(f"timeout: {timeout_freq}, forbidden: {forbidden_freq}, found: {found_freq}, error: {error_freq}") 
-	advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_option)
+	with data_lock:
+		shared_data["timeout_freq"] = timeout_calc(timeout_status, shared_data["timeout_freq"])
+		shared_data["forbidden_freq"] = forbidden_calc(forbidden_status, shared_data["forbidden_freq"])
+		shared_data["found_freq"] = found_calc(found_status, shared_data["found_freq"])
+		shared_data["error_freq"] = error_calc(error_status, shared_data["error_freq"])
+
+	print(f"timeout: {shared_data['timeout_freq']}, forbidden: {shared_data['forbidden_freq']}, found: {shared_data['found_freq']}, error: {shared_data['error_freq']}")
+	advice_calc(shared_data["timeout_freq"], shared_data["forbidden_freq"], shared_data["found_freq"], shared_data["error_freq"], proxy_option)
 
 	return timeout_freq, forbidden_freq, found_freq, error_freq, found_list
 
@@ -254,14 +262,27 @@ elif os.path.exists(output_file):
 	sys.exit()
 method = args.method
 valid_methods = ['get', 'post', 'put', 'delete', 'head', 'options', 'patch']
+
 timeout_status = False
-timeout_freq = 0
+#timeout_freq = 0
 forbidden_status = False
-forbidden_freq = 0
+#forbidden_freq = 0
 found_status = False
-found_freq = 0
+#found_freq = 0
 error_status = False
-error_freq = 0
+#error_freq = 0
+
+
+shared_data = {
+    "timeout_freq": 0,
+    "forbidden_freq": 0,
+    "found_freq": 0,
+    "error_freq": 0,
+    "found_list": []
+}
+data_lock = Lock()
+
+
 current_time = datetime.now()
 formatted_time = current_time.strftime('%Y/%m/%d %H:%M:%S')
 user = subprocess.getoutput("whoami")
@@ -326,12 +347,12 @@ try:
 	with ThreadPoolExecutor(max_workers=10) as executor:
 		futures = []
 		for path in paths_list:
-			futures.append(executor.submit(check_path, url, path, method, timeout, auth, proxies, output_file, found_list, timeout_freq, forbidden_freq, found_freq, error_freq, proxy_option, start_time))
+			futures.append(executor.submit(check_path, url, path, method, timeout, auth, proxies, output_file, found_list, proxy_option, start_time))
 		for future in futures:
 			future.result()
 	print("========================================================")
 	print("Found URLs:\n")
-	for found in found_list:
+	for found in shared_data["found_list"]:
 		print(found)
 
 except KeyboardInterrupt:
@@ -342,7 +363,6 @@ except KeyboardInterrupt:
 
 	print("========================================================\n")
 	print("Found URLs:")
-	for found in found_list:
+	for found in shared_data["found_list"]:
 		print(found)
 	sys.exit(0)
-kip@raspberrypi:~/Desktop/lotsoftools/CyberScout $
