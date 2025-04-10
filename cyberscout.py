@@ -126,7 +126,7 @@ def advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_opti
 	#	print("No value for frequenties")
 
 
-def check_path(url, path, method, timeout, auth, proxies, output_file, found_list, proxy_option, start_time):
+def check_path(url, path, method, timeout, auth, proxies, output_file, proxy_option, start_time):
 	global should_stop
 
 	path = path.strip()
@@ -193,22 +193,21 @@ def check_path(url, path, method, timeout, auth, proxies, output_file, found_lis
 		found_status = False
 		error_status = True
 
+
+	with data_lock:
+		shared_data["progress_count"] += 1
+		current_count = shared_data["progress_count"]
+		total_count = shared_data["total_paths"]
+
 	elapsed = time.time() - start_time
 	minutes = int(elapsed // 60)
 	seconds = int(elapsed % 60)
 
 	if result != f"[NOT FOUND] {full_url}":
-		print(f"{minutes:02d}:{seconds:02d} - {result}")
+		print(f"[{current_count}/{total_count}] [{minutes:02d}:{seconds:02d}] {result}")
 	if output_file:
 		with open(output_file, 'a') as file:
 			file.write(f"{result}\n")
-
-	'''
-	timeout_freq = timeout_calc(timeout_status, timeout_freq)
-	forbidden_freq = forbidden_calc(forbidden_status, forbidden_freq)
-	found_freq = found_calc(found_status, found_freq)
-	error_freq = error_calc(error_status, error_freq)
-	'''
 
 	with data_lock:
 		shared_data["timeout_freq"] = timeout_calc(timeout_status, shared_data["timeout_freq"])
@@ -216,10 +215,10 @@ def check_path(url, path, method, timeout, auth, proxies, output_file, found_lis
 		shared_data["found_freq"] = found_calc(found_status, shared_data["found_freq"])
 		shared_data["error_freq"] = error_calc(error_status, shared_data["error_freq"])
 
-	print(f"timeout: {shared_data['timeout_freq']}, forbidden: {shared_data['forbidden_freq']}, found: {shared_data['found_freq']}, error: {shared_data['error_freq']}")
+	#print(f"timeout: {shared_data['timeout_freq']}, forbidden: {shared_data['forbidden_freq']}, found: {shared_data['found_freq']}, error: {shared_data['error_freq']}")
 	advice_calc(shared_data["timeout_freq"], shared_data["forbidden_freq"], shared_data["found_freq"], shared_data["error_freq"], proxy_option)
 
-	return timeout_freq, forbidden_freq, found_freq, error_freq, found_list
+	return shared_data["found_list"]
 
 
 #arguments
@@ -248,9 +247,7 @@ start_time = time.time()
 should_stop = False
 url = args.url
 path_file = args.wordlist
-if os.path.exists(path_file):
-	pass
-else:
+if not os.path.exists(path_file):
 	print(f"{RED}[ERROR]{RESET}Wordlist not found")
 	sys.exit()
 timeout = args.timeout
@@ -264,21 +261,17 @@ method = args.method
 valid_methods = ['get', 'post', 'put', 'delete', 'head', 'options', 'patch']
 
 timeout_status = False
-#timeout_freq = 0
 forbidden_status = False
-#forbidden_freq = 0
 found_status = False
-#found_freq = 0
 error_status = False
-#error_freq = 0
-
-
 shared_data = {
-    "timeout_freq": 0,
-    "forbidden_freq": 0,
-    "found_freq": 0,
-    "error_freq": 0,
-    "found_list": []
+	"timeout_freq": 0,
+	"forbidden_freq": 0,
+	"found_freq": 0,
+	"error_freq": 0,
+	"progress_count": 0,
+	"total_paths": 0,
+	"found_list": []
 }
 data_lock = Lock()
 
@@ -317,12 +310,24 @@ if proxy_option:
         else:
                 proxies = {"http": f"http://{proxy}"}
 
+
+#list
+if output_file is not None:
+        with open(output_file, 'w') as file:
+                file.write("========================================================\n")
+
+
+with open(path_file, 'r') as file:
+        paths_list = file.readlines()
+        shared_data["total_paths"] = len(paths_list)
+
+
 #presentation
 print("========================================================")
 print(f"{BLUE_BACK}CYBERSCOUT{RESET} by 0c1av")
 print("========================================================")
 print(f"Url:        {url}")
-print(f"Wordlist:   {path_file}")
+print(f"Wordlist:   {shared_data['total_paths']} paths from {path_file}")
 print(f"Timeout:    {timeout}")
 print(f"Proxy:      {proxies}")
 print(f"Method:     {method.upper()}")
@@ -333,21 +338,12 @@ print("")
 
 
 #Trying paths
-if output_file is not None:
-	with open(output_file, 'w') as file:
-		file.write("========================================================\n")
-
-
-with open(path_file, 'r') as file:
-	paths_list = file.readlines()
-
-found_list = []
 
 try:
 	with ThreadPoolExecutor(max_workers=10) as executor:
 		futures = []
 		for path in paths_list:
-			futures.append(executor.submit(check_path, url, path, method, timeout, auth, proxies, output_file, found_list, proxy_option, start_time))
+			futures.append(executor.submit(check_path, url, path, method, timeout, auth, proxies, output_file, proxy_option, start_time))
 		for future in futures:
 			future.result()
 	print("========================================================")
@@ -356,7 +352,7 @@ try:
 		print(found)
 
 except KeyboardInterrupt:
-	print("Keyborad interrumpt\n")
+	print("Keyboard interrumpt\n")
 
 	executor.shutdown(wait=False, cancel_futures=True)
 	should_stop = True
