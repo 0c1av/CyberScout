@@ -127,14 +127,10 @@ def advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_opti
 
 
 def check_path(url, path, method, timeout, auth, proxies, output_file, proxy_option, start_time):
-	global should_stop
 
 	path = path.strip()
 	full_url = f"{url}/{path}"
 	result = ""
-
-	if should_stop:
-		return
 
 	try:
 		if method.lower() in valid_methods:
@@ -230,6 +226,7 @@ parser.add_argument("-o", "--output", type=str, help="File to save the output (e
 parser.add_argument("-a", "--auth", type=str, help="Basic authentication in the format 'username:password'")
 parser.add_argument("-x", "--proxy", nargs='?', const="built_in", help="Proxy to use in the format 'ip:port'. If omitted, a built-in proxy will be used.")
 parser.add_argument("-m", "--method", type=str, default="GET", help="Method to use (GET, POST, PUT, DELETE, HEAD, OPTIONS, PATCH)")
+parser.add_argument("-n", "--threads", type=int, default=10, help="Number of threads to use (default is 10)")
 args = parser.parse_args()
 
 #colors
@@ -244,9 +241,9 @@ RESET = "\033[0m"
 
 #basic variables
 start_time = time.time()
-should_stop = False
 url = args.url
 path_file = args.wordlist
+thread_amount = args.threads
 if not os.path.exists(path_file):
 	print(f"{RED}[ERROR]{RESET}Wordlist not found")
 	sys.exit()
@@ -331,34 +328,44 @@ print(f"Wordlist:   {shared_data['total_paths']} paths from {path_file}")
 print(f"Timeout:    {timeout}")
 print(f"Proxy:      {proxies}")
 print(f"Method:     {method.upper()}")
+print(f"Threads:    {thread_amount}")
 print("========================================================")
 print(f"{current_time}: DirHunter launched by {user}")
 print("========================================================")
 print("")
 
 
-#Trying paths
 
+
+
+
+
+
+def prog_end():
+	print(f"{ORANGE}Please let the program end.{RESET}")
+	print("========================================================")
+	print("Found URLs:\n")
+	for found in shared_data["found_list"]:
+		print(found)
+	print("========================================================")
+	print(f"{ORANGE}It may take a few seconds to end the threads{RESET}")
+	sys.exit(0)
+
+
+
+#Trying paths
 try:
-	with ThreadPoolExecutor(max_workers=10) as executor:
+	with ThreadPoolExecutor(max_workers=thread_amount) as executor:
 		futures = []
 		for path in paths_list:
 			futures.append(executor.submit(check_path, url, path, method, timeout, auth, proxies, output_file, proxy_option, start_time))
 		for future in futures:
 			future.result()
-	print("========================================================")
-	print("Found URLs:\n")
-	for found in shared_data["found_list"]:
-		print(found)
+	prog_end()
 
 except KeyboardInterrupt:
 	print("Keyboard interrumpt\n")
 
 	executor.shutdown(wait=False, cancel_futures=True)
-	should_stop = True
 
-	print("========================================================\n")
-	print("Found URLs:")
-	for found in shared_data["found_list"]:
-		print(found)
-	sys.exit(0)
+	prog_end()
