@@ -1,3 +1,4 @@
+kip@raspberrypi:~/Desktop/lotsoftools/CyberScout $ cat cyberscout.py 
 import os
 import requests
 import threading
@@ -8,7 +9,7 @@ import subprocess
 import random
 import sys
 from concurrent.futures import ThreadPoolExecutor
-
+import time
 #functions
 def get_proxy_with_api():
 	try:
@@ -81,6 +82,7 @@ def error_calc(error_status, error_freq):
 
 def advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_option):
 	advice_list = []
+
 	'''timeout'''
 	if timeout_freq > 2:
 		advice_list.append("Try increasing the timeout")
@@ -89,21 +91,25 @@ def advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_opti
 			advice_list.append("Try using a proxy")
 		if proxy_option == True:
 			advice_list.append("There could be a problem with the proxy. Try restarting the program")
+
 	'''forbidden'''
 	if forbidden_freq > 1:
 		advice_list.append("Try using authentication")
+
 	'''found'''
 	if found_freq > 6:
 		if proxy_option == True:
 			advice_list.append("There could be a problem with the proxy. Try restarting the program")
 		elif proxy_option == False:
 			advice_list.append("There could be a problem with the target. Try restarting the program")
+
 	'''error'''
 	if error_freq > 3:
 		if proxy_option == True:
 			advice_list.append("There could be a problem with the proxy. Try restarting the program")
 		elif proxy_option == False:
 			advice_list.append("There could be a problem with the target. Try restarting the program")
+
 
 	'''error + ...'''
 	if (error_freq + timeout_freq) > 4:
@@ -116,7 +122,11 @@ def advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_opti
 		for advice in advice_list:
 			print(f"{YELLOW}---{advice}---{RESET}")
 
-def check_path(url, path, method, timeout, auth, proxies, output_file, found_list):
+	#if not timeout_freq and not forbidden_freq and not found_freq and not error_freq:
+	#	print("No value for frequenties")
+
+
+def check_path(url, path, method, timeout, auth, proxies, output_file, found_list, timeout_freq, forbidden_freq, found_freq, error_freq, proxy_option, start_time):
 	global should_stop
 
 	path = path.strip()
@@ -183,7 +193,12 @@ def check_path(url, path, method, timeout, auth, proxies, output_file, found_lis
 		found_status = False
 		error_status = True
 
-	print(result)
+	elapsed = time.time() - start_time
+	minutes = int(elapsed // 60)
+	seconds = int(elapsed % 60)
+
+	if result != f"[NOT FOUND] {full_url}":
+		print(f"{minutes:02d}:{seconds:02d} - {result}")
 	if output_file:
 		with open(output_file, 'a') as file:
 			file.write(f"{result}\n")
@@ -192,10 +207,12 @@ def check_path(url, path, method, timeout, auth, proxies, output_file, found_lis
 	forbidden_freq = forbidden_calc(forbidden_status, forbidden_freq)
 	found_freq = found_calc(found_status, found_freq)
 	error_freq = error_calc(error_status, error_freq)
-	#print(f"timeout= {timeout_freq}, forbidden: {forbidden_freq}, found_freq: {found_freq}, error_freq: {error_freq}")
+
+	print(f"timeout: {timeout_freq}, forbidden: {forbidden_freq}, found: {found_freq}, error: {error_freq}") 
 	advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_option)
 
 	return timeout_freq, forbidden_freq, found_freq, error_freq, found_list
+
 
 #arguments
 parser = argparse.ArgumentParser(description="Directory hunting tool for discovering URLs.")
@@ -219,6 +236,7 @@ ORANGE = "\033[33m"
 RESET = "\033[0m"
 
 #basic variables
+start_time = time.time()
 should_stop = False
 url = args.url
 path_file = args.wordlist
@@ -308,7 +326,7 @@ try:
 	with ThreadPoolExecutor(max_workers=10) as executor:
 		futures = []
 		for path in paths_list:
-			futures.append(executor.submit(check_path, url, path, method, timeout, auth, proxies, output_file, found_list))
+			futures.append(executor.submit(check_path, url, path, method, timeout, auth, proxies, output_file, found_list, timeout_freq, forbidden_freq, found_freq, error_freq, proxy_option, start_time))
 		for future in futures:
 			future.result()
 	print("========================================================")
@@ -321,9 +339,10 @@ except KeyboardInterrupt:
 
 	executor.shutdown(wait=False, cancel_futures=True)
 	should_stop = True
-	
+
 	print("========================================================\n")
 	print("Found URLs:")
 	for found in found_list:
 		print(found)
 	sys.exit(0)
+kip@raspberrypi:~/Desktop/lotsoftools/CyberScout $
