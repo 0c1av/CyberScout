@@ -11,6 +11,8 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 import time
 import socket
+
+
 #functions
 def get_proxy_with_api():
 	try:
@@ -142,7 +144,8 @@ def check_path(url, path, method, timeout, auth, proxies, output_file, proxy_opt
 				print(f"{RED}[ERROR]{RESET} Invalid method")
 				sys.exit()
 			if response.status_code == 200:
-				result = f"{GREEN}[FOUND]{RESET} {full_url}"
+				#result = f"{GREEN}[FOUND]{RESET} {full_url}"
+				status_output = f"{GREEN}[FOUND]{RESET}"
 				timeout_status = False
 				forbidden_status = False
 				found_status = True
@@ -159,34 +162,39 @@ def check_path(url, path, method, timeout, auth, proxies, output_file, proxy_opt
 						file.writelines(content)
 
 			elif response.status_code == 404:
-				result = f"[NOT FOUND] {full_url}"
+				#result = f"[NOT FOUND] {full_url}"
+				status_output = "[NOT FOUND]"
 				timeout_status = False
 				forbidden_status = False
 				found_status = False
 				error_status = False
 
 			elif response.status_code == 403:
-				result = f"{D_GRAY}[FORBIDDEN]{RESET} {full_url}"
+				#result = f"{D_GRAY}[FORBIDDEN]{RESET} {full_url}"
+				status_output = f"{D_GRAY}[FORBIDDEN]{RESET}"
 				timeout_status = False
 				forbidden_status = True
 				found_status = False
 				error_status = False
 			else:
-				result = f"[{response.status_code}] {full_url}"
+				#result = f"[{response.status_code}] {full_url}"
+				status_output = f"[{response.status_code}]"
 				timeout_status = False
 				forbidden_status = False
 				found_status = False
 				error_status = False
 
 		except requests.exceptions.Timeout:
-			result = f"{L_GRAY}[TIMEOUT]{RESET} {full_url}"
+			#result = f"{L_GRAY}[TIMEOUT]{RESET} {full_url}"
+			status_output = f"{L_GRAY}[TIMEOUT]{RESET}"
 			timeout_status = True
 			forbidden_status = False
 			found_status = False
 			error_status = False
 
 		except requests.exceptions.RequestException as e:
-			result = f"{RED}[ERROR]{RESET} {full_url} -> {e}"
+			#result = f"{RED}[ERROR]{RESET} {full_url} -> {e}"
+			status_output = f"{RED}[ERROR]{RESET}"
 			timeout_status = False
 			forbidden_status = False
 			found_status = False
@@ -202,8 +210,8 @@ def check_path(url, path, method, timeout, auth, proxies, output_file, proxy_opt
 		minutes = int(elapsed // 60)
 		seconds = int(elapsed % 60)
 
-		if result != f"[NOT FOUND] {full_url}":
-			print(f"[{current_count}/{total_count}] [{minutes:02d}:{seconds:02d}] {result}")
+		if status_output != "[NOT FOUND]":
+			print(f"[{status_output}] [{current_count}/{total_count}] [{minutes:02d}:{seconds:02d}] {full_url}")
 
 		if output_file:
 			with open(output_file, 'a') as file:
@@ -375,23 +383,28 @@ ping_thread.start()
 print("========================================================")
 print(f"{BLUE_BACK}CYBERSCOUT{RESET} by 0c1av")
 print("========================================================")
-print(f"Url:        {url}")
-print(f"Wordlist:   {shared_data['total_paths']} paths from {path_file}")
-print(f"Timeout:    {timeout}")
-print(f"Proxy:      {proxies}")
-print(f"Method:     {method.upper()}")
-print(f"Threads:    {thread_amount}")
+print(f"Url:         {url}")
+print(f"Wordlist:    {shared_data['total_paths']} paths from {path_file}")
+print(f"Output file: {output_file}")
+print(f"Timeout:     {timeout}")
+print(f"Proxy:       {proxies}")
+print(f"Method:      {method.upper()}")
+print(f"Threads:     {thread_amount}")
 print("========================================================")
 print(f"{current_time}: DirHunter launched by {user}")
 print("========================================================")
-print("")
+print(f"{CYAN}[INFO]{RESET} Terminate the program by pressing Ctrl+C twice")
 
 
 
 
 
+def output_clean():
+	with open(output_file, 'r') as file:
+		lines = [line for line in file if line.strip()]
 
-
+	with open(output_file, 'w') as file:
+		file.writelines(lines)
 
 def prog_end():
 	print(f"{CYAN}[INFO]{RESET}Program terminating...")
@@ -405,6 +418,10 @@ def prog_end():
 	print(f"{PURPLE}========================================================{RESET}")
 	print(f"{CYAN}[INFO]{RESET}It may take some time to terminate program (max duration: {thread_amount * timeout}s)")
 	print(f"{CYAN}[INFO]{RESET}It may take a few seconds to end the threads")
+	if output_file:
+		print(f"{RED}[WARNING]{RESET} Interrupting the program at this stage may result in issues with the creation of the output file.")
+		output_clean()
+
 	sys.exit(0)
 
 
