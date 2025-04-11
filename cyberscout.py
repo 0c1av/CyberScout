@@ -10,6 +10,7 @@ import random
 import sys
 from concurrent.futures import ThreadPoolExecutor
 import time
+import socket
 #functions
 def get_proxy_with_api():
 	try:
@@ -118,7 +119,7 @@ def advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_opti
 		elif proxy_option == False:
 			advice_list.append("There could be a problem with the target. Try restarting the program")
 
-	if advice_list:
+	if advice_list and not access_event.is_set():
 		for advice in advice_list:
 			print(f"{YELLOW}---{advice}---{RESET}")
 
@@ -132,89 +133,92 @@ def check_path(url, path, method, timeout, auth, proxies, output_file, proxy_opt
 	full_url = f"{url}/{path}"
 	result = ""
 
-	try:
-		if method.lower() in valid_methods:
-			response = getattr(requests, method.lower())(full_url, timeout=timeout, auth=auth, proxies=proxies)
-		else:
-			print(f"{RED}[ERROR]{RESET} Invalid method")
-			sys.exit()
-		if response.status_code == 200:
-			result = f"{GREEN}[FOUND]{RESET} {full_url}"
-			timeout_status = False
-			forbidden_status = False
-			found_status = True
-			error_status = False
-			shared_data["found_list"].append(full_url)
-			if output_file:
-				with open(output_file, 'r+') as file:
-					content = file.readlines()
-					for i, line in enumerate(content):
-						if line.strip() == "========================================================":
-							content.insert(i, f"{GREEN}[FOUND]{RESET} {full_url}\n")
-							break
-					file.seek(0)
-					file.writelines(content)
+	if not access_event.is_set():
 
-		elif response.status_code == 404:
-			result = f"[NOT FOUND] {full_url}"
-			timeout_status = False
+		try:
+			if method.lower() in valid_methods:
+				response = getattr(requests, method.lower())(full_url, timeout=timeout, auth=auth, proxies=proxies)
+			else:
+				print(f"{RED}[ERROR]{RESET} Invalid method")
+				sys.exit()
+			if response.status_code == 200:
+				result = f"{GREEN}[FOUND]{RESET} {full_url}"
+				timeout_status = False
+				forbidden_status = False
+				found_status = True
+				error_status = False
+				shared_data["found_list"].append(full_url)
+				if output_file:
+					with open(output_file, 'r+') as file:
+						content = file.readlines()
+						for i, line in enumerate(content):
+							if line.strip() == "========================================================":
+								content.insert(i, f"{GREEN}[FOUND]{RESET} {full_url}\n")
+								break
+						file.seek(0)
+						file.writelines(content)
+
+			elif response.status_code == 404:
+				result = f"[NOT FOUND] {full_url}"
+				timeout_status = False
+				forbidden_status = False
+				found_status = False
+				error_status = False
+
+			elif response.status_code == 403:
+				result = f"{D_GRAY}[FORBIDDEN]{RESET} {full_url}"
+				timeout_status = False
+				forbidden_status = True
+				found_status = False
+				error_status = False
+			else:
+				result = f"[{response.status_code}] {full_url}"
+				timeout_status = False
+				forbidden_status = False
+				found_status = False
+				error_status = False
+
+		except requests.exceptions.Timeout:
+			result = f"{L_GRAY}[TIMEOUT]{RESET} {full_url}"
+			timeout_status = True
 			forbidden_status = False
 			found_status = False
 			error_status = False
 
-		elif response.status_code == 403:
-			result = f"{D_GRAY}[FORBIDDEN]{RESET} {full_url}"
-			timeout_status = False
-			forbidden_status = True
-			found_status = False
-			error_status = False
-		else:
-			result = f"[{response.status_code}] {full_url}"
+		except requests.exceptions.RequestException as e:
+			result = f"{RED}[ERROR]{RESET} {full_url} -> {e}"
 			timeout_status = False
 			forbidden_status = False
 			found_status = False
-			error_status = False
-
-	except requests.exceptions.Timeout:
-		result = f"{L_GRAY}[TIMEOUT]{RESET} {full_url}"
-		timeout_status = True
-		forbidden_status = False
-		found_status = False
-		error_status = False
-
-	except requests.exceptions.RequestException as e:
-		result = f"{RED}[ERROR]{RESET} {full_url} -> {e}"
-		timeout_status = False
-		forbidden_status = False
-		found_status = False
-		error_status = True
+			error_status = True
 
 
-	with data_lock:
-		shared_data["progress_count"] += 1
-		current_count = shared_data["progress_count"]
-		total_count = shared_data["total_paths"]
+		with data_lock:
+			shared_data["progress_count"] += 1
+			current_count = shared_data["progress_count"]
+			total_count = shared_data["total_paths"]
 
-	elapsed = time.time() - start_time
-	minutes = int(elapsed // 60)
-	seconds = int(elapsed % 60)
+		elapsed = time.time() - start_time
+		minutes = int(elapsed // 60)
+		seconds = int(elapsed % 60)
 
-	if result != f"[NOT FOUND] {full_url}":
-		print(f"[{current_count}/{total_count}] [{minutes:02d}:{seconds:02d}] {result}")
-	if output_file:
-		with open(output_file, 'a') as file:
-			file.write(f"{result}\n")
+		if result != f"[NOT FOUND] {full_url}":
+			print(f"[{current_count}/{total_count}] [{minutes:02d}:{seconds:02d}] {result}")
 
-	with data_lock:
-		shared_data["timeout_freq"] = timeout_calc(timeout_status, shared_data["timeout_freq"])
-		shared_data["forbidden_freq"] = forbidden_calc(forbidden_status, shared_data["forbidden_freq"])
-		shared_data["found_freq"] = found_calc(found_status, shared_data["found_freq"])
-		shared_data["error_freq"] = error_calc(error_status, shared_data["error_freq"])
+		if output_file:
+			with open(output_file, 'a') as file:
+				file.write(f"{result}\n")
 
-	#print(f"timeout: {shared_data['timeout_freq']}, forbidden: {shared_data['forbidden_freq']}, found: {shared_data['found_freq']}, error: {shared_data['error_freq']}")
-	advice_calc(shared_data["timeout_freq"], shared_data["forbidden_freq"], shared_data["found_freq"], shared_data["error_freq"], proxy_option)
+		with data_lock:
+			shared_data["timeout_freq"] = timeout_calc(timeout_status, shared_data["timeout_freq"])
+			shared_data["forbidden_freq"] = forbidden_calc(forbidden_status, shared_data["forbidden_freq"])
+			shared_data["found_freq"] = found_calc(found_status, shared_data["found_freq"])
+			shared_data["error_freq"] = error_calc(error_status, shared_data["error_freq"])
 
-	return shared_data["found_list"]
+		#print(f"timeout: {shared_data['timeout_freq']}, forbidden: {shared_data['forbidden_freq']}, found: {shared_data['found_freq']}, error: {shared_data['error_freq']}")
+		advice_calc(shared_data["timeout_freq"], shared_data["forbidden_freq"], shared_data["found_freq"], shared_data["error_freq"], proxy_option)
+
+		return shared_data["found_list"]
 
 
 #arguments
@@ -237,7 +241,10 @@ GREEN = "\033[92m"
 YELLOW = "\033[93m"
 BLUE_BACK = "\033[44m"
 ORANGE = "\033[33m"
+CYAN = "\033[96m"
+PURPLE = "\033[35m"
 RESET = "\033[0m"
+
 
 #basic variables
 start_time = time.time()
@@ -319,6 +326,51 @@ with open(path_file, 'r') as file:
         shared_data["total_paths"] = len(paths_list)
 
 
+# ping thread
+access_event = threading.Event()
+stop_event = threading.Event()
+
+def alert_worker():
+	while not stop_event.is_set():
+		if access_event.is_set():
+			print(f"{ORANGE}[WARNING]{RESET} Url not accessible")
+		time.sleep(5)
+
+def ping_url():
+	print(f"{CYAN}[INFO]{RESET} Starting connectivity monitor...")
+
+	try:
+		response = requests.get(url, timeout=timeout)
+		if response.ok:
+			print(f"{CYAN}[INFO]{RESET} Url is accessible")
+		else:
+			print(f"{CYAN}[INFO]{RESET} Url returned status:", response.status_code)
+	except requests.exceptions.RequestException:
+		access_event.set()
+		print(f"{ORANGE}[WARNING]{RESET} Url not accessible")
+
+	alert_thread = threading.Thread(target=alert_worker)
+	alert_thread.start()
+
+	while not stop_event.is_set():
+		try:
+			response = requests.get(url, timeout=timeout)
+			if response.ok:
+				if access_event.is_set():
+					print(f"{CYAN}[INFO]{RESET} Url is accessible again.")
+					access_event.clear()
+
+		except requests.exceptions.RequestException:
+			if not access_event.is_set():
+				access_event.set()
+		time.sleep(1)
+
+ping_thread = threading.Thread(target=ping_url, daemon=True)
+ping_thread.start()
+
+
+
+
 #presentation
 print("========================================================")
 print(f"{BLUE_BACK}CYBERSCOUT{RESET} by 0c1av")
@@ -342,13 +394,17 @@ print("")
 
 
 def prog_end():
-	print(f"{ORANGE}Please let the program end.{RESET}")
-	print("========================================================")
+	print(f"{CYAN}[INFO]{RESET}Program terminating...")
+	stop_event.set()
+	print(f"{PURPLE}========================================================{RESET}")
+	if access_event.is_set():
+                print(f"{ORANGE}[WARNING]{RESET} Url has been unreachable")
 	print("Found URLs:\n")
 	for found in shared_data["found_list"]:
 		print(found)
-	print("========================================================")
-	print(f"{ORANGE}It may take a few seconds to end the threads{RESET}")
+	print(f"{PURPLE}========================================================{RESET}")
+	print(f"{CYAN}[INFO]{RESET}It may take some time to terminate program (max duration: {thread_amount * timeout}s)")
+	print(f"{CYAN}[INFO]{RESET}It may take a few seconds to end the threads")
 	sys.exit(0)
 
 
@@ -361,6 +417,7 @@ try:
 			futures.append(executor.submit(check_path, url, path, method, timeout, auth, proxies, output_file, proxy_option, start_time))
 		for future in futures:
 			future.result()
+	print(f"{CYAN}[INFO]{RESET}All paths tried")
 	prog_end()
 
 except KeyboardInterrupt:
