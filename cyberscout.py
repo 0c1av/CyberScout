@@ -392,7 +392,7 @@ print(f"Auth:        {auth}")
 print(f"Method:      {method.upper()}")
 print(f"Threads:     {thread_amount}")
 print("========================================================")
-print(f"{current_time}: DirHunter launched by {user}")
+print(f"{current_time}: CyberScout launched by {user}")
 print("========================================================")
 print(f"{CYAN}[INFO]{RESET} Terminate the program by pressing Ctrl+C twice")
 
