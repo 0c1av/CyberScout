@@ -1,3 +1,4 @@
+import logging
 import os
 import requests
 import threading
@@ -17,6 +18,8 @@ from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.service import Service
+import sys
+import contextlib
 
 #functions
 def get_proxy_with_api():
@@ -35,6 +38,7 @@ def get_proxy_with_api():
 	except requests.exceptions.RequestException as e:
 		print(f"{RED}[ERROR]{RESET} Unable to fetch proxy: {e}")
 		return None
+
 
 def timeout_calc(timeout_status, timeout_freq):
 	if timeout_status == False:
@@ -88,31 +92,30 @@ def error_calc(error_status, error_freq):
 
 	return error_freq
 
+
 def advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_option):
 	advice_list = []
 
 	'''timeout'''
-	if timeout_freq > 2:
+	if timeout_freq == 2:
 		advice_list.append("Try increasing the timeout")
-	if timeout_freq > 6:
+	if timeout_freq == 6:
+		timeout_freq = 0
 		if proxy_option == False:
 			advice_list.append("Try using a proxy")
 		if proxy_option == True:
 			advice_list.append("There could be a problem with the proxy. Try restarting the program")
 
 	'''forbidden'''
-	if forbidden_freq > 1:
+	if forbidden_freq == 2:
+		forbidden_freq = 0
 		advice_list.append("Try using authentication")
 
-	'''found'''
-	if found_freq > 6:
-		if proxy_option == True:
-			advice_list.append("There could be a problem with the proxy. Try restarting the program")
-		elif proxy_option == False:
-			advice_list.append("There could be a problem with the target. Try restarting the program")
 
 	'''error'''
-	if error_freq > 3:
+	if error_freq == 4:
+		if error_freq >= 6:
+			error_freq = 0
 		if proxy_option == True:
 			advice_list.append("There could be a problem with the proxy. Try restarting the program")
 		elif proxy_option == False:
@@ -120,7 +123,7 @@ def advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_opti
 
 
 	'''error + ...'''
-	if (error_freq + timeout_freq) > 4:
+	if (error_freq + timeout_freq) > 4 and error_freq < 3 and timeout_freq < 3:
 		if proxy_option == True:
 			advice_list.append("There could be a problem with the proxy. Try restarting the program")
 		elif proxy_option == False:
@@ -242,6 +245,13 @@ def xss_scan(url_dict):
 	# Flask App
 	app = Flask(__name__)
 
+	cli = sys.modules.get('flask.cli')
+	if cli:
+		cli.show_server_banner = lambda *x: None  # Disable banner
+	log = logging.getLogger('werkzeug')
+	log.setLevel(logging.ERROR)
+
+
 	@app.route('/test', methods=['GET'])
 	def test_endpoint():
 		index = request.args.get('index', '')
@@ -251,6 +261,8 @@ def xss_scan(url_dict):
 			url = url_map.get(index, "Unknown")
 			print(f"{GREEN}[GOT]{RESET} Received XSS payload from {url}")
 		return "Received"
+
+
 
 	def run_server():
 		app.run(host='0.0.0.0', port=8080, ssl_context='adhoc')
@@ -297,7 +309,7 @@ def xss_scan(url_dict):
 								input_element.clear()
 								input_element.send_keys(xss_payload)
 								input_element.send_keys(Keys.RETURN)
-								print(f"[+] Injected into input")
+								#print(f"[+] Injected into input")
 						except Exception as e:
 							print(f"{error} Error injecting into input")
 				except Exception as e:
@@ -320,10 +332,12 @@ parser.add_argument("-w", "--wordlist", type=str, required=True, help="Path word
 parser.add_argument("-t", "--timeout", type=int, default=5, help="Timeout for requests in seconds")
 parser.add_argument("-o", "--output", type=str, help="File to save the output (e.g. results.txt)")
 parser.add_argument("-a", "--auth", type=str, help="Basic authentication in the format 'username:password'")
-parser.add_argument("-x", "--proxy", nargs='?', const="built_in", help="Proxy to use in the format 'ip:port'. If omitted, a built-in proxy will be used.")
+parser.add_argument("-p", "--proxy", nargs='?', const="built_in", help="Proxy to use in the format 'ip:port'. If omitted, a built-in proxy will be used.")
 parser.add_argument("-m", "--method", type=str, default="GET", help="Method to use (GET, POST, PUT, DELETE, HEAD, OPTIONS, PATCH)")
 parser.add_argument("-n", "--threads", type=int, default=10, help="Number of threads to use (default is 10)")
 parser.add_argument("-i", "--info", action="store_true", help="See more info about the requests")
+parser.add_argument("-x", "--xss", action="store_true", help="After path discovery, test for XSS vulnerabilities on the discovered paths. For standalone XSS scanning, visit: https://github.com/0c1av/XSScan")
+
 args = parser.parse_args()
 
 #colors
@@ -342,11 +356,15 @@ error = f"{RED}[!]{RESET}"
 
 
 #basic variables
+pentest_list = []
 start_time = time.time()
 url = args.url
 path_file = args.wordlist
 thread_amount = args.threads
 info_option = args.info
+xss_option = args.xss
+if xss_option:
+	pentest_list.append("XSS")
 if not os.path.exists(path_file):
 	print(f"{RED}[ERROR]{RESET}Wordlist not found")
 	sys.exit()
@@ -371,7 +389,9 @@ shared_data = {
 	"error_freq": 0,
 	"progress_count": 0,
 	"total_paths": 0,
-	"found_list": []
+	"found_list": [],
+	"timeout_print_freq_1": 0,
+	"timeout_print_freq_2": 0
 }
 data_lock = Lock()
 
@@ -436,12 +456,13 @@ def ping_url():
 	try:
 		response = requests.get(url, timeout=timeout)
 		if not response.ok:
-			print(f"{CYAN}[INFO]{RESET} Url returned status:", response.status_code)
+			print(f"{ORANGE}[WARNING]{RESET} Url returned status:", response.status_code)
 
 	except requests.exceptions.RequestException:
 		access_event.set()
-		print(f"{ORANGE}[WARNING]{RESET} Url not accessible")
+		print(f"{BOLD}[WARNING]{RESET} Url not accessible")
 
+	start_bruteforce.set()
 	alert_thread = threading.Thread(target=alert_worker)
 	alert_thread.start()
 
@@ -458,10 +479,13 @@ def ping_url():
 				access_event.set()
 		time.sleep(4)
 
+
+start_bruteforce = threading.Event()
+
 ping_thread = threading.Thread(target=ping_url, daemon=True)
 ping_thread.start()
-time.sleep(2)
 
+start_bruteforce.wait()
 
 
 #presentation
@@ -476,6 +500,7 @@ print(f"Proxy:       {proxies}")
 print(f"Auth:        {auth}")
 print(f"Method:      {method.upper()}")
 print(f"Threads:     {thread_amount}")
+print(f"Pentesting:  {pentest_list}")
 print("========================================================")
 print(f"{current_time}: CyberScout launched by {user}")
 print("========================================================")
@@ -524,7 +549,7 @@ try:
 		for future in futures:
 			future.result()
 	print(f"{BOLD}[INFO] All paths tried{RESET}")
-
+	path_end()
 except KeyboardInterrupt:
 	print("Keyboard interrumpt\n")
 
@@ -532,9 +557,9 @@ except KeyboardInterrupt:
 
 	prog_end()
 
-path_end()
 try:
-	xss_scan(shared_data["found_list"])
+	if xss_option:
+		xss_scan(shared_data["found_list"])
 except KeyboardInterrupt:
 	print("Keyboard interrumpt\n")
 	prog_end()
