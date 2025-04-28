@@ -1,4 +1,3 @@
-#testtesttest
 import logging
 import os
 import requests
