@@ -328,7 +328,7 @@ def xss_scan(url_dict):
 #arguments
 parser = argparse.ArgumentParser(description="Directory hunting tool for discovering URLs.")
 parser.add_argument("-u", "--url", type=str, required=True, help="Target URL (e.g. https://example.com)")
-parser.add_argument("-w", "--wordlist", type=str, required=True, help="Path wordlist (e.g. common.txt)")
+parser.add_argument("-w", "--wordlist", type=str, required=False, help="Path wordlist (e.g. common.txt). If not specified, the default wordlist (lists/wordlists/) will be used. You can also choose between 3 built in wordlists by giving small, medium or large as argument.")
 parser.add_argument("-t", "--timeout", type=int, default=5, help="Timeout for requests in seconds")
 parser.add_argument("-o", "--output", type=str, help="File to save the output (e.g. results.txt)")
 parser.add_argument("-a", "--auth", type=str, help="Basic authentication in the format 'username:password'")
@@ -359,7 +359,28 @@ error = f"{RED}[!]{RESET}"
 pentest_list = []
 start_time = time.time()
 url = args.url
-path_file = args.wordlist
+
+def check_path_existance(path_file):
+	if not os.path.exists(path_file):
+		print(f"{RED}[ERROR]{RESET} The given wordlist path does not exist")
+		sys.exit()
+
+if args.wordlist is None:
+	print(f"{ORANGE}[WARNING]{RESET} Wordlist not specified, using default wordlist")
+	path_file = 'lists/wordlists/small_wordlist.txt'
+	check_path_existance(path_file)
+elif args.wordlist == "small":
+	path_file = 'lists/wordlists/small_wordlist.txt'
+	check_path_existance(path_file)
+elif args.wordlist == "medium":
+	path_file = 'lists/wordlists/medium_wordlist.txt'
+	check_path_existance(path_file)
+elif args.wordlist == "large":
+	path_file = 'lists/wordlists/large_wordlist.txt'
+	check_path_existance(path_file)
+else:
+    path_file = args.wordlist
+
 thread_amount = args.threads
 info_option = args.info
 xss_option = args.xss
