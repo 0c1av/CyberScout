@@ -7,6 +7,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.service import Service
 import requests
+import os
 
 # Flask App
 app = Flask(__name__)
@@ -91,8 +92,10 @@ def scan_urls(url_dict):
 
 
 if __name__ == '__main__':
-	# Load URLs from file
-	url_map = load_urls("targets.txt")
+	if os.path.exists("targets.txt"):
+		url_map = load_urls("targets.txt")
+	else:
+		print(f"{error}No targets.txt found")
 
 	# Start the server
 	server_thread = threading.Thread(target=run_server)

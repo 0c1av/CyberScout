@@ -140,7 +140,7 @@ def advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_opti
 def check_path(url, path, method, timeout, auth, proxies, output_file, proxy_option, start_time, info_option):
 
 	path = path.strip()
-	full_url = f"{url}/{path}"
+	full_url = f"{url}{path}"
 	result = ""
 
 	if not access_event.is_set():
@@ -328,7 +328,7 @@ def xss_scan(url_dict):
 #arguments
 parser = argparse.ArgumentParser(description="Directory hunting tool for discovering URLs.")
 parser.add_argument("-u", "--url", type=str, required=True, help="Target URL (e.g. https://example.com)")
-parser.add_argument("-w", "--wordlist", type=str, required=False, help="Path wordlist (e.g. common.txt). If not specified, the default wordlist (lists/wordlists/) will be used. You can also choose between 3 built in wordlists by giving small, medium or large as argument.")
+parser.add_argument("-w", "--wordlist", type=str, required=False, help="Path wordlist (e.g. common.txt). If not specified, the default wordlist (lists/wordlists/) will be used. You can also choose between 3 built in wordlists by giving small, medium or large as argument. If the file is a python script ending with '.py', the script for the wordlist will be executed for the wordlist")
 parser.add_argument("-t", "--timeout", type=int, default=5, help="Timeout for requests in seconds")
 parser.add_argument("-o", "--output", type=str, help="File to save the output (e.g. results.txt)")
 parser.add_argument("-a", "--auth", type=str, help="Basic authentication in the format 'username:password'")
@@ -380,6 +380,7 @@ elif args.wordlist == "large":
 	check_path_existance(path_file)
 else:
     path_file = args.wordlist
+
 
 thread_amount = args.threads
 info_option = args.info
@@ -458,10 +459,24 @@ if output_file is not None:
                 file.write("")
 
 
-with open(path_file, 'r') as file:
-        paths_list = file.readlines()
-        shared_data["total_paths"] = len(paths_list)
-
+paths_list = []
+if path_file.endswith(".py"):
+	script_variables = {}
+	with open(path_file, 'r') as f:
+		user_code = f.read()
+		try:
+			exec(user_code, {}, script_variables)
+			if "paths_list" in script_variables and isinstance(script_variables["paths_list"], list):
+				paths_list = script_variables["paths_list"]
+			else:
+				print("[!] Script did not define a proper paths_list.")
+		except Exception as e:
+			print(f"[!] Error running user path script: {e}")
+else:
+	with open(path_file, 'r') as file:
+        	paths_list = file.readlines()
+shared_data["total_paths"] = len(paths_list)
+print(paths_list)
 
 # ping thread
 access_event = threading.Event()

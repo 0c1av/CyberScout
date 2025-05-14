@@ -140,7 +140,7 @@ def advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_opti
 def check_path(url, path, method, timeout, auth, proxies, output_file, proxy_option, start_time, info_option):
 
 	path = path.strip()
-	full_url = f"{url}/{path}"
+	full_url = f"{url}{path}"
 	result = ""
 
 	if not access_event.is_set():
