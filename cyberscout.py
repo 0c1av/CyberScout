@@ -135,6 +135,7 @@ def advice_calc(timeout_freq, forbidden_freq, found_freq, error_freq, proxy_opti
 
 	#if not timeout_freq and not forbidden_freq and not found_freq and not error_freq:
 	#	print("No value for frequenties")
+	#print(f"advice list: {advice_list}")
 
 
 def check_path(url, path, method, timeout, auth, proxies, output_file, proxy_option, start_time, info_option):
@@ -328,7 +329,7 @@ def xss_scan(url_dict):
 #arguments
 parser = argparse.ArgumentParser(description="Directory hunting tool for discovering URLs.")
 parser.add_argument("-u", "--url", type=str, required=True, help="Target URL (e.g. https://example.com)")
-parser.add_argument("-w", "--wordlist", type=str, required=False, help="Path wordlist (e.g. common.txt). If not specified, the default wordlist (lists/wordlists/) will be used. You can also choose between 3 built in wordlists by giving small, medium or large as argument. If the file is a python script ending with '.py', the script for the wordlist will be executed for the wordlist")
+parser.add_argument("-w", "--wordlist", type=str, required=False, help="Specifies the path to a custom wordlist file (e.g., common.txt). If not provided, a default wordlist located in lists/wordlists/ will be used. Alternatively, you may specify one of the three built-in wordlists by using small, medium, or large as the argument. If the provided file ends with .py, it will be treated as a Python script and executed to dynamically generate the wordlist.")
 parser.add_argument("-t", "--timeout", type=int, default=5, help="Timeout for requests in seconds")
 parser.add_argument("-o", "--output", type=str, help="File to save the output (e.g. results.txt)")
 parser.add_argument("-a", "--auth", type=str, help="Basic authentication in the format 'username:password'")
@@ -476,7 +477,7 @@ else:
 	with open(path_file, 'r') as file:
         	paths_list = file.readlines()
 shared_data["total_paths"] = len(paths_list)
-print(paths_list)
+#print(paths_list)
 
 # ping thread
 access_event = threading.Event()

